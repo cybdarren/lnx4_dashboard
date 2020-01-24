@@ -9,7 +9,10 @@
 
 #include <egt/ui>
 #include <iostream>
+#include <fstream>
+#include <linux/input.h>
 #include "MultiStateImageButton.h"
+#include "GpioEventMonitor.h"
 
 using namespace egt;
 using namespace std;
@@ -31,15 +34,24 @@ static void demo_up_down_animator(std::shared_ptr<T> widget, int min, int max, s
 	sequence->start();
 }
 
-// create an image button to go on the dashboard
-static std::shared_ptr<MultiStateImageButton> create_button_from_svg(TopWindow &parent, SvgImage &svgSrc, const string res_name)
+// create an image button to go on the dashboard with an up/down state
+static std::shared_ptr<MultiStateImageButton> create_button_from_svg(TopWindow &parent, SvgImage &svgSrc,
+		const string res_name, const string res_name2 = "")
 {
 	// get the bounding box for the button in the SVG image
 	RectF boundingBox = svgSrc.id_box(res_name);
 	// get just the image clipped to the bounding box
-	auto btnImage = make_shared<Image>(svgSrc.id(res_name, boundingBox));
+	auto btnImageDefault = make_shared<Image>(svgSrc.id(res_name, boundingBox));
 	// create an ImageButton
-	auto btn = make_shared<MultiStateImageButton>(*btnImage);
+	auto btn = make_shared<MultiStateImageButton>(*btnImageDefault);
+
+	if (res_name2 != "")
+	{
+		RectF altBoundingBox = svgSrc.id_box(res_name2);
+		auto altButtonImage = make_shared<Image>(svgSrc.id(res_name2, altBoundingBox));
+		btn->set_altImage(*altButtonImage);
+	}
+
 	// prevent the button auto-resizing and drawing the background (only draw the image)
 	btn->flags().set(Widget::flag::no_autoresize);
 	btn->set_boxtype(Theme::boxtype::solid);
@@ -49,6 +61,16 @@ static std::shared_ptr<MultiStateImageButton> create_button_from_svg(TopWindow &
 
 	parent.add(btn);
 	return btn;
+}
+
+void asio_print(const asio::error_code& /*e*/)
+{
+	cout << "Hello, world!" << endl;
+}
+
+void read_handler(const asio::error_code& error, ...)
+{
+
 }
 
 int main(int argc, const char** argv)
@@ -104,42 +126,95 @@ cout << "Time to load background png: " << chrono::duration_cast<chrono::millise
 	win.add(mph_gauge);
 
 	// create the buttons on the dashboard and add handlers for the presses
-	shared_ptr<MultiStateImageButton> left_btn = create_button_from_svg(win, dashboard_svg, "#btn_left");
+	shared_ptr<MultiStateImageButton> left_btn = create_button_from_svg(win, dashboard_svg, "#btn_left", "#btn_left2");
 	left_btn->on_event([] (Event& event)
-		{
+	{
 		cout << "Left button click" << endl;
-		}, {eventid::pointer_click}) ;
+	}, {eventid::pointer_click});
 
-
-	shared_ptr<MultiStateImageButton> accel_btn = create_button_from_svg(win, dashboard_svg, "#btn_accel");
-	accel_btn->on_event([] (Event& event)
-		{
-		cout << "Accel button click" << endl;
-		}, {eventid::pointer_click}) ;
-
-	shared_ptr<MultiStateImageButton> right_btn = create_button_from_svg(win, dashboard_svg, "#btn_right");
+	shared_ptr<MultiStateImageButton> right_btn = create_button_from_svg(win, dashboard_svg, "#btn_right", "#btn_right2");
 	right_btn->on_event([] (Event& event)
-		{
+	{
 		cout << "Right button click" << endl;
-		}, {eventid::pointer_click}) ;
+	}, {eventid::pointer_click});
 
 	shared_ptr<MultiStateImageButton> front_lights_btn = create_button_from_svg(win, dashboard_svg, "#frontlights");
 	front_lights_btn->on_event([] (Event& event)
-		{
+	{
 		cout << "Front lights click" << endl;
-		}, {eventid::pointer_click}) ;
+	}, {eventid::pointer_click});
 
 	shared_ptr<MultiStateImageButton> rear_lights_btn = create_button_from_svg(win, dashboard_svg, "#rearlights");
 	rear_lights_btn->on_event([] (Event& event)
-		{
+	{
 		cout << "Rear lights click" << endl;
-		}, {eventid::pointer_click}) ;
+	}, {eventid::pointer_click});
 
-	shared_ptr<MultiStateImageButton> start_btn = create_button_from_svg(win, dashboard_svg, "#btn_start");
+	shared_ptr<MultiStateImageButton> start_btn = create_button_from_svg(win, dashboard_svg, "#btn_start", "#btn_start2");
 	start_btn->on_event([] (Event& event)
-		{
+	{
 		cout << "Start button click" << endl;
-		}, {eventid::pointer_click}) ;
+	}, {eventid::pointer_click});
+
+	PeriodicTimer accel_timer(std::chrono::milliseconds(400));
+	shared_ptr<MultiStateImageButton> accel_btn = create_button_from_svg(win, dashboard_svg, "#btn_accel");
+	accel_btn->on_event([&accel_timer] (Event& event)
+	{
+		switch (event.id())
+		{
+		case eventid::raw_pointer_down:
+		case eventid::keyboard_down:
+			cout << "Accelerate" << endl;
+			accel_timer.start();
+			break;
+		case eventid::raw_pointer_up:
+		case eventid::keyboard_up:
+			cout << "Decelerate" << endl;
+			accel_timer.stop();
+			break;
+		default:
+			break;
+		}
+	});
+
+	accel_timer.on_timeout([&win] ()
+	{
+		cout << "accel button timeout" << endl;
+	});
+
+	int fd = open("/dev/input/event2", O_RDONLY);
+	if (fd < 0)
+	{
+		cerr << "Failed to open /dev/input/event2" << std::endl;
+		return 1;
+	}
+
+	// start a monitor
+	GpioEventMonitor eventMonitor(fd, [accel_btn](gpioevent_data& event)
+	{
+		// we are not expecting events from anything other than the USER button so
+		// we will play fast and loose with the cast
+		const auto inputEvent = reinterpret_cast<input_event*>(&event);
+		if (inputEvent->code == 0x104)
+		{
+			Event ev;
+
+			// USER gpio activity
+			if (inputEvent->value == 1)
+			{
+				// GPIO button pressed
+				ev.set_id(eventid::keyboard_down);
+			}
+			else
+			{
+				// GPIO button released
+				ev.set_id(eventid::keyboard_up);
+			}
+
+			// USER events are sent to the accelerator button
+			accel_btn->handle(ev);
+		}
+	});
 
 	win.show();
 

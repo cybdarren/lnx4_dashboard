@@ -16,12 +16,28 @@ namespace user {
 
 class MultiStateImageButton: public ImageButton {
 public:
+	// create a default image button with only one image
 	MultiStateImageButton(const Image& image,
 							const std::string& text = {},
 							alignmask text_align = DEFAULT_TEXT_ALIGN) noexcept;
+
+	// create an image button with an up and down image
+	MultiStateImageButton(const Image& image,
+							const Image& altImage,
+							const std::string& text = {},
+							alignmask text_align = DEFAULT_TEXT_ALIGN) noexcept;
+
 	virtual ~MultiStateImageButton();
 
-    virtual void draw(Painter& painter, const Rect& rect) override;
+	void set_altImage(Image& altImage);
+
+	void handle(Event& event);
+
+protected:
+	// default image to display when not pressed
+	Image m_defaultImage;
+    // alternative image to display when pressed
+    Image m_altImage;
 
 };
 
