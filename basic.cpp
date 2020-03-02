@@ -20,12 +20,12 @@ using namespace egt::experimental;
 using namespace egt::v1::user;
 
 template<class T>
-static void demo_up_down_animator(std::shared_ptr<T> widget, int min, int max, std::chrono::seconds length = std::chrono::seconds(10))
+static void demo_up_down_animator(std::shared_ptr<T> widget, int min, int max, std::chrono::seconds duration = std::chrono::seconds(10))
 {
-	auto animationup = std::make_shared<PropertyAnimator>(min, max, length, easing_linear);
+	auto animationup = std::make_shared<PropertyAnimator>(min, max, duration, easing_linear);
 	animationup->on_change(std::bind(&T::set_value, std::ref(*widget), std::placeholders::_1));
 
-	auto animationdown = std::make_shared<PropertyAnimator>(max, min, length, easing_linear);
+	auto animationdown = std::make_shared<PropertyAnimator>(max, min, duration, easing_linear);
 	animationdown->on_change(std::bind(&T::set_value, std::ref(*widget), std::placeholders::_1));
 
 	auto sequence = new AnimationSequence(true);
@@ -54,23 +54,13 @@ static std::shared_ptr<MultiStateImageButton> create_button_from_svg(TopWindow &
 
 	// prevent the button auto-resizing and drawing the background (only draw the image)
 	btn->flags().set(Widget::flag::no_autoresize);
-	btn->set_boxtype(Theme::boxtype::solid);
+	btn->set_boxtype(Theme::boxtype::none);
 	// move the button to the same location as in the Svg file
 	btn->move(Point(boundingBox.x(), boundingBox.y()));
 	btn->set_name(res_name);
 
 	parent.add(btn);
 	return btn;
-}
-
-void asio_print(const asio::error_code& /*e*/)
-{
-	cout << "Hello, world!" << endl;
-}
-
-void read_handler(const asio::error_code& error, ...)
-{
-
 }
 
 int main(int argc, const char** argv)
@@ -90,8 +80,26 @@ cout << "Time to load background png: " << chrono::duration_cast<chrono::millise
 	// load the svg image to allow selection of discrete objects
 	SvgImage dashboard_svg("dashboard.svg", SizeF(win.content_area().width(), 0));
 
+	// Create the list box for diagnostic output on the dashboard
+	RectF txtRect = dashboard_svg.id_box("#rect_list");
+	Rect iTxtRect = Rect(txtRect.x(), txtRect.y(), txtRect.width(), txtRect.height());
+
+	auto txtDiag = make_shared<TextBox>(u8"EGT Dashboard demo for LNX4 "
+			"This is a multiline text box", iTxtRect);
+	txtDiag->text_flags().set((TextBox::flag::multiline));
+	txtDiag->set_border(0);
+	txtDiag->set_color(Palette::ColorId::bg, Palette::black);
+	txtDiag->set_color(Palette::ColorId::text, Palette::white);
+	win.add(txtDiag);
+
+	// create a ScrolledView to hold the text output window
+//	auto scrollView = make_shared<ScrolledView>(iTxtRect);
+
+//	win.add(scrollView);
+
+
 	// Create the MPH gauge
-	// As an exercise in logical programming the gauge is created with just 3 layers
+	// As an exercise in logical programming the gauge is created with 3 layers
 	//     Background, which is also the largest part of the gauge
 	//     Needle, which is animated
 	//     Hub which is located at the center and on top of the needle
@@ -156,31 +164,53 @@ cout << "Time to load background png: " << chrono::duration_cast<chrono::millise
 		cout << "Start button click" << endl;
 	}, {eventid::pointer_click});
 
-	PeriodicTimer accel_timer(std::chrono::milliseconds(400));
+
+	// create the progress bar to display RPM. Rather than using an object from the svg like the buttons we
+	// instead  use the size of the rpm rectangle to calculate the position on screen and place a standard
+	// ProgressBar widget in the same location
+	RectF rpm_rect = dashboard_svg.id_box("#rect_rpm");
+	Rect intRpmRect = Rect(rpm_rect.x(), rpm_rect.y(), rpm_rect.width(), rpm_rect.height());
+	ProgressBar rpm_bar(intRpmRect, 0, 100, 0);
+	rpm_bar.set_show_label(false);
+	win.add(rpm_bar);
+
+	// animator for acceleration
+	PropertyAnimator anim_accelerate(0, 100, std::chrono::milliseconds(6000), easing_easy);
+	anim_accelerate.on_change(std::bind(&ProgressBar::set_value, std::ref(rpm_bar),
+            std::placeholders::_1));
+
+	// animator for deceleration
+	PropertyAnimator anim_decelerate(100, 0, std::chrono::milliseconds(4000), easing_easy);
+	anim_decelerate.on_change(std::bind(&ProgressBar::set_value, std::ref(rpm_bar),
+			std::placeholders::_1));
+
 	shared_ptr<MultiStateImageButton> accel_btn = create_button_from_svg(win, dashboard_svg, "#btn_accel");
-	accel_btn->on_event([&accel_timer] (Event& event)
+	accel_btn->on_event([&anim_accelerate, &anim_decelerate, &rpm_bar, txtDiag] (Event& event)
 	{
 		switch (event.id())
 		{
 		case eventid::raw_pointer_down:
 		case eventid::keyboard_down:
-			cout << "Accelerate" << endl;
-			accel_timer.start();
+			// stop any deceleration
+			anim_decelerate.stop();
+			// start accelerating again from the current rpm
+			anim_accelerate.set_starting(rpm_bar.value());
+			anim_accelerate.start();
+			txtDiag->append("Accelerating\n");
 			break;
 		case eventid::raw_pointer_up:
 		case eventid::keyboard_up:
-			cout << "Decelerate" << endl;
-			accel_timer.stop();
+			// stop acceleration
+			anim_accelerate.stop();
+			// start deceleration
+			anim_decelerate.set_starting(rpm_bar.value());
+			anim_decelerate.start();
 			break;
 		default:
 			break;
 		}
 	});
 
-	accel_timer.on_timeout([&win] ()
-	{
-		cout << "accel button timeout" << endl;
-	});
 
 	int fd = open("/dev/input/event2", O_RDONLY);
 	if (fd < 0)

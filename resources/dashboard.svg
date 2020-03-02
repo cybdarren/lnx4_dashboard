@@ -670,7 +670,7 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="1.4142136"
-     inkscape:cx="403.91864"
+     inkscape:cx="400.63477"
      inkscape:cy="226.09317"
      inkscape:document-units="px"
      inkscape:current-layer="layer2"
@@ -1389,5 +1389,22 @@
        y="97.895828"
        ry="2.504209"
        inkscape:label="btn_accel" />
+    <rect
+       style="opacity:1;fill:#ff0000;fill-opacity:1;stroke:none;stroke-width:0.57541454;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:0.98469388;paint-order:normal"
+       id="rect_rpm"
+       width="27.76795"
+       height="5.2916651"
+       x="37.041668"
+       y="87.3125"
+       ry="0"
+       inkscape:label="rect_rpm" />
+    <rect
+       style="opacity:1;fill:#ff0000;fill-opacity:1;stroke:none;stroke-width:0.6879167;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:0.98469388;paint-order:normal"
+       id="rect_list"
+       width="76.729172"
+       height="58.208332"
+       x="127"
+       y="29.104166"
+       inkscape:label="rect_list" />
   </g>
 </svg>
